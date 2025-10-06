@@ -1,0 +1,13 @@
+portada
+abstract
+index
+introduction (2-3 paginas)
+    - justification
+objetivo
+materiales(mi ordenador i guess) y metodos (como se prepara los datos y tal, preprocessing, ...) 6 paginas
+resultados  2 to 5 pages
+Discussion/conclussion (sobre los resultados) 1 page
+referencias
+Informacion extra/ anexo
+
+paginas aproximadas 10-15 paginas. mas o menos
