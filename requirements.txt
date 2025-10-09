@@ -6,3 +6,4 @@ keras
 matplotlib
 sktime
 ipykernel
+pillow
