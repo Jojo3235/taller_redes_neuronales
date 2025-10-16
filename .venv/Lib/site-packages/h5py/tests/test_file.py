@@ -13,19 +13,21 @@
     Tests all aspects of File objects, including their creation.
 """
 
-import pytest
 import os
 import stat
 import pickle
 import tempfile
+import time
 import subprocess
 import sys
+from hashlib import sha256
+
+import pytest
 
 from .common import ut, TestCase, UNICODE_FILENAMES, closed_tempfile
 from h5py._hl.files import direct_vfd
 from h5py import File
 import h5py
-from .. import h5
 import pathlib
 
 
@@ -493,8 +495,10 @@ class TestNewLibver(TestCase):
             cls.latest = 'v110'
         elif h5py.version.hdf5_version_tuple < (1, 13, 0):
             cls.latest = 'v112'
-        else:
+        elif h5py.version.hdf5_version_tuple < (2, 0, 0):
             cls.latest = 'v114'
+        else:
+            cls.latest = 'v200'
 
     def test_default(self):
         """ Opening with no libver arg """
@@ -526,6 +530,22 @@ class TestNewLibver(TestCase):
         """ Opening with "v112" libver arg """
         f = File(self.mktemp(), 'w', libver='v112')
         self.assertEqual(f.libver, ('v112', self.latest))
+        f.close()
+
+    @ut.skipIf(h5py.version.hdf5_version_tuple < (1, 14, 0),
+               'Requires HDF5 1.14 or later')
+    def test_single_v114(self):
+        """ Opening with "v114" libver arg """
+        f = File(self.mktemp(), 'w', libver='v114')
+        self.assertEqual(f.libver, ('v114', self.latest))
+        f.close()
+
+    @ut.skipIf(h5py.version.hdf5_version_tuple < (2, 0, 0),
+               'Requires HDF5 2.0 or later')
+    def test_single_v200(self):
+        """ Opening with "v200" libver arg """
+        f = File(self.mktemp(), 'w', libver='v200')
+        self.assertEqual(f.libver, ('v200', self.latest))
         f.close()
 
     def test_multiple(self):
@@ -945,10 +965,6 @@ class TestSWMRMode(TestCase):
         fid.close()
 
 
-@pytest.mark.skipif(
-    h5py.version.hdf5_version_tuple < (1, 12, 1) and (
-    h5py.version.hdf5_version_tuple[:2] != (1, 10) or h5py.version.hdf5_version_tuple[2] < 7),
-    reason="Requires HDF5 >= 1.12.1 or 1.10.x >= 1.10.7")
 @pytest.mark.skipif("HDF5_USE_FILE_LOCKING" in os.environ,
                     reason="HDF5_USE_FILE_LOCKING env. var. is set")
 class TestFileLocking:
@@ -1069,3 +1085,19 @@ def test_close_gc(writable_file):
             refs = [d.id for d in f.values()]
             refs.append(refs)   # Make a reference cycle so GC is involved
             del refs  # GC is likely to fire while closing the file
+
+
+@pytest.mark.slow
+def test_reproducible_file(tmp_path):
+    def write(path):
+        with File(path, 'w', track_order=True) as hf:
+            g = hf.create_group("group", track_order=True)
+            g.create_dataset("dset", shape=10, dtype='f4')
+
+    f1 = tmp_path / "f1.h5"
+    write(f1)
+    time.sleep(1.1)  # Ensure any timestamps are different
+    f2 = tmp_path / "f2.h5"
+    write(f2)
+
+    assert sha256(f1.read_bytes()).hexdigest() == sha256(f2.read_bytes()).hexdigest()

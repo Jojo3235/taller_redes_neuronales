@@ -66,8 +66,10 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
     # Validate chunk shape
     if isinstance(chunks, int) and not isinstance(chunks, bool):
         chunks = (chunks,)
+    # Logically, the following `zip` could be strict, but it's happening
+    # before we've done checks elsewhere that raise more descriptive errors
     if isinstance(chunks, tuple) and any(
-        chunk > dim for dim, chunk in zip(tmp_shape, chunks) if dim is not None
+        chunk > dim for dim, chunk in zip(tmp_shape, chunks, strict=False) if dim is not None
     ):
         errmsg = "Chunk shape must not be greater than data shape in any dimension. "\
                  "{} is not compatible with {}".format(chunks, shape)
@@ -367,16 +369,34 @@ class ChunkIterator:
         if source_sel is None:
             # select over entire dataset
             self._sel = tuple(
-                slice(0, self._shape[dim])
-                for dim in range(rank)
+                slice(0, self._shape[dim]) for dim in range(rank)
             )
         else:
-            if isinstance(source_sel, slice):
-                self._sel = (source_sel,)
+            if isinstance(source_sel, (slice, int)):
+                sel = [source_sel]
             else:
-                self._sel = source_sel
-        if len(self._sel) != rank:
-            raise ValueError("Invalid selection - selection region must have same rank as dataset")
+                sel = list(source_sel)
+            if len(sel) != rank:
+                raise ValueError("Invalid selection - selection region must have same rank as dataset")
+            for dim, s in enumerate(sel):
+                start: int | None
+                stop: int | None
+                step: int | None
+                match s:
+                    case int():
+                        start = s
+                        stop = s + 1
+                        step = None
+                    case slice():
+                        start = s.start or 0
+                        stop = s.stop or self._shape[dim]
+                        step = s.step
+                    case _:
+                        # TODO: use typing.assert_never when Python 3.10 is dropped
+                        raise AssertionError(f'{s}: Selection object must be a slice or integer')
+                sel[dim] = slice(start, stop, step)
+                self._sel = tuple(sel)
+
         self._chunk_index = []
         for dim in range(rank):
             s = self._sel[dim]
@@ -733,7 +753,7 @@ class Dataset(HLObject):
                 try:
                     newlen = int(size)
                 except TypeError:
-                    raise TypeError("Argument must be a single int if axis is specified")
+                    raise TypeError("Argument must be a single int if axis is specified") from None
                 size = list(self.shape)
                 size[axis] = newlen
 
@@ -1143,27 +1163,23 @@ class Dataset(HLObject):
 
         return f'<HDF5 dataset {name}: shape {self.shape}, type "{self.dtype.str}">'
 
-    if hasattr(h5d.DatasetID, "refresh"):
-        @with_phil
-        def refresh(self):
-            """ Refresh the dataset metadata by reloading from the file.
+    @with_phil
+    def refresh(self):
+        """ Refresh the dataset metadata by reloading from the file.
 
-            This is part of the SWMR features and only exist when the HDF5
-            library version >=1.9.178
-            """
-            self._id.refresh()
-            self._cache_props.clear()
+        This is part of the SWMR features.
+        """
+        self._id.refresh()
+        self._cache_props.clear()
 
-    if hasattr(h5d.DatasetID, "flush"):
-        @with_phil
-        def flush(self):
-            """ Flush the dataset data and metadata to the file.
-            If the dataset is chunked, raw data chunks are written to the file.
+    @with_phil
+    def flush(self):
+        """ Flush the dataset data and metadata to the file.
+        If the dataset is chunked, raw data chunks are written to the file.
 
-            This is part of the SWMR features and only exist when the HDF5
-            library version >=1.9.178
-            """
-            self._id.flush()
+        This is part of the SWMR features.
+        """
+        self._id.flush()
 
     if vds_support:
         @property
