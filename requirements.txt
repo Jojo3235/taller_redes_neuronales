@@ -6,4 +6,5 @@ keras
 matplotlib
 sktime
 ipykernel
+seaborn
 pillow
