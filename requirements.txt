@@ -1,10 +1,10 @@
-numpy
 tensorflow
+keras
+numpy
 scikit-learn
 pandas
-keras
-matplotlib
 sktime
-ipykernel
+matplotlib
 seaborn
 pillow
+ipykernel
